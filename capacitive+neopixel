@@ -13,11 +13,11 @@ uint16_t lasttouched = 0;
 uint16_t currtouched = 0;
 
 #define PIXEL_PIN1   6    // Digital IO pin connected to the NeoPixels.
-//#define PIXEL_PIN2   7
-//#define PIXEL_PIN3   8
-//#define PIXEL_PIN4   9
-//#define PIXEL_PIN5   10
-//#define PIXEL_PIN6   11
+#define PIXEL_PIN2   7
+#define PIXEL_PIN3   8
+#define PIXEL_PIN4   9
+#define PIXEL_PIN5   10
+#define PIXEL_PIN6   11
 
 #define PIXEL_COUNT 24
 
@@ -27,11 +27,12 @@ uint16_t currtouched = 0;
 //   NEO_KHZ400  400 KHz bitstream (e.g. FLORA pixels)
 //   NEO_KHZ800  800 KHz bitstream (e.g. High Density LED strip), correct for neopixel stick
 Adafruit_NeoPixel strip1 = Adafruit_NeoPixel(PIXEL_COUNT, PIXEL_PIN1, NEO_GRBW + NEO_KHZ800);
-//Adafruit_NeoPixel strip2 = Adafruit_NeoPixel(PIXEL_COUNT, PIXEL_PIN2, NEO_GRBW + NEO_KHZ800);
-//Adafruit_NeoPixel strip3 = Adafruit_NeoPixel(PIXEL_COUNT, PIXEL_PIN3, NEO_GRBW + NEO_KHZ800);
-//Adafruit_NeoPixel strip4 = Adafruit_NeoPixel(PIXEL_COUNT, PIXEL_PIN4, NEO_GRBW + NEO_KHZ800);
-//Adafruit_NeoPixel strip5 = Adafruit_NeoPixel(PIXEL_COUNT, PIXEL_PIN5, NEO_GRBW + NEO_KHZ800);
-//Adafruit_NeoPixel strip6 = Adafruit_NeoPixel(PIXEL_COUNT, PIXEL_PIN6, NEO_GRBW + NEO_KHZ800);
+Adafruit_NeoPixel strip2 = Adafruit_NeoPixel(PIXEL_COUNT, PIXEL_PIN2, NEO_GRBW + NEO_KHZ800);
+Adafruit_NeoPixel strip3 = Adafruit_NeoPixel(PIXEL_COUNT, PIXEL_PIN3, NEO_GRBW + NEO_KHZ800);
+Adafruit_NeoPixel strip4 = Adafruit_NeoPixel(PIXEL_COUNT, PIXEL_PIN4, NEO_GRBW + NEO_KHZ800);
+Adafruit_NeoPixel strip5 = Adafruit_NeoPixel(PIXEL_COUNT, PIXEL_PIN5, NEO_GRBW + NEO_KHZ800);
+Adafruit_NeoPixel strip6 = Adafruit_NeoPixel(PIXEL_COUNT, PIXEL_PIN6, NEO_GRBW + NEO_KHZ800);
+Adafruit_NeoPixel *neopixel[] = { &strip1, &strip2, &strip3, &strip4, &strip5, &strip6 };
 
 // R,G,B,W
 const uint32_t RED = strip1.Color(255, 0, 0, 0);//strip1
@@ -40,35 +41,46 @@ const uint32_t GREEN = strip1.Color(0, 127, 0, 0);//strip3
 const uint32_t PURPLE = strip1.Color(158, 8, 148, 0);//strip4
 const uint32_t YELLOW = strip1.Color(255, 100, 0, 0);//strip5
 const uint32_t ORANGE = strip1.Color(150, 7, 0, 0);//strip6
+const uint32_t BLACK = strip1.Color(0, 0, 0, 0);//strip6
 
 const int Days = 7;
 
-boolean oldState = LOW;
-unsigned int showType = 0;
+// Patterns: strip&touch,Color,
+// FIXME should be const
+uint32_t day1[] = { 1, RED, 2, BLUE, 3, GREEN, 0, 0 };
+uint32_t day2[] = { 4, PURPLE, 1, RED, 2, BLUE, 5, YELLOW, 0, 0 }; // FIXME
+uint32_t day3[] = { 3, GREEN, 2, BLUE, 4, PURPLE, 0, 0 };
+uint32_t day4[] = { 2, BLUE, 1, RED, 5, YELLOW, 3, GREEN, 0, 0 };
+uint32_t day5[] = { 4, PURPLE, 3, GREEN, 2, BLUE, 1, RED, 0, 0 };
+uint32_t day6[] = { 5, YELLOW, 1, RED, 4, PURPLE, 3, GREEN, 0, 0 };
+uint32_t day7[] = { 1, RED, 3, GREEN, 2, BLUE, 0, 0 };
+uint32_t *day_pattern[] = { day1, day2, day3, day4, day5, day6, day7 };
+const int match_timeout = 5000; // msec timeout to get a match right
+
+unsigned int which_day = 0;
 
 
 void setup() {
   Serial.begin( 9600);
+  while (!Serial);        // needed to keep leonardo/micro from starting too fast!
+
+  Serial.println("Start");
 
   //pinMode(BUTTON_PIN, INPUT_PULLUP);
   strip1.begin();
   strip1.show();
- // strip2.begin();
- // strip2.show();
- // strip3.begin();
- // strip3.show();
- // strip4.begin();
- // strip4.show();
- // strip5.begin();
- // strip5.show();
- // strip6.begin();
- // strip6.show();// Initialize all pixels to 'off'
+  strip2.begin();
+  strip2.show();
+  strip3.begin();
+  strip3.show();
+  strip4.begin();
+  strip4.show();
+  strip5.begin();
+  strip5.show();
+  strip6.begin();
+  strip6.show();// Initialize all pixels to 'off'
+  Serial.println("Neopixels setup");
 
- while (!Serial);        // needed to keep leonardo/micro from starting too fast!
-
-  Serial.begin(9600);
-  Serial.println("Adafruit MPR121 Capacitive Touch sensor test"); 
-  
   // Default address is 0x5A, if tied to 3.3V its 0x5B
   // If tied to SDA its 0x5C and if SCL then 0x5D
   if (!cap.begin(0x5A)) {
@@ -76,81 +88,149 @@ void setup() {
     while (1);
   }
   Serial.println("MPR121 found!");
+
+  Serial.println("Begin");
+
 }
 
 void loop() {
-    // debug
+  // debug
   if (Serial.available() > 0) {
     int val = Serial.read() ;
     if (val >= '0' && val <= '9') {
-      showType = val - '0';
-      Serial.print("MAN ");Serial.println(showType);
-      startShow(showType  );
+      which_day = val - '0';
+      Serial.print("MAN "); Serial.println(which_day);
     }
   }
 
+  if (play_usermatch(which_day)) {
+    which_day = (which_day + 1) % Days;
+    if (which_day == 0) {
+      // play congratulations
+    all_one_color(GREEN);
+    delay(300);
+    all_one_color(BLACK);
+    }
+    else {
+      // play good job so far
+    all_one_color(ORANGE);
+    delay(300);
+    all_one_color(BLACK);
+    }
+  }
+  else {
+    // play fail pattern
+    all_one_color(RED);
+    delay(300);
+    all_one_color(BLACK);
+  }
+}
+
+
+void all_one_color(uint32_t color) {
+  for (Adafruit_NeoPixel *strip : neopixel) {
+    for (int i = 0; i < PIXEL_COUNT; i++) {
+      strip->setPixelColor(i, color);
+    }
+    strip->show();
+  }
+}
+
+int next_touch() {
+  // non-blocking
+  // returns -1 if no touch
+  // returns 0..11 on new touch
+
   // Get the currently touched pads
-  currtouched = cap.touched();
-  
-  for (uint8_t i=0; i<12; i++) {
+  currtouched = cap.touched(); // bitmap
+
+  for (uint8_t i = 0; i < 12; i++) {
     // it if *is* touched and *wasnt* touched before, alert!
     if ((currtouched & _BV(i)) && !(lasttouched & _BV(i)) ) {
       Serial.print(i); Serial.println(" touched");
-      strip1.begin();
-      strip1.show();
+      lasttouched = currtouched;
+      return i;
     }
     // if it *was* touched and now *isnt*, alert!
     if (!(currtouched & _BV(i)) && (lasttouched & _BV(i)) ) {
       Serial.print(i); Serial.println(" released");
     }
   }
- // reset our state
+  // reset our state, i.e. dont' trigger again till untouch
   lasttouched = currtouched;
+  return -1;
 
   // comment out this line for detailed data from the sensor!
   return;
-  
-  // debugging info, what
+
+  // debugging info, raw values
   Serial.print("\t\t\t\t\t\t\t\t\t\t\t\t\t 0x"); Serial.println(cap.touched(), HEX);
   Serial.print("Filt: ");
-  for (uint8_t i=0; i<12; i++) {
+  for (uint8_t i = 0; i < 12; i++) {
     Serial.print(cap.filteredData(i)); Serial.print("\t");
   }
   Serial.println();
   Serial.print("Base: ");
-  for (uint8_t i=0; i<12; i++) {
+  for (uint8_t i = 0; i < 12; i++) {
     Serial.print(cap.baselineData(i)); Serial.print("\t");
   }
   Serial.println();
-  
+
   // put a delay so it isn't overwhelming
   delay(100);
 }
 
+boolean play_usermatch(int i) {
 
-  void startShow(int i) {
-    switch (i) {
-      
-      case 1:
-      theaterChase(strip1, RED, 50);  
-      off(strip1);
-      break;
+  // Play
+  // a pattern is pairs: { #,color, ... }, so go by 2's
+  Serial.print("play "); Serial.println(i);
+  uint32_t *pattern = day_pattern[ i ];
+  for (int i = 0; pattern[i] != 0;  i += 2 ) {
+    Adafruit_NeoPixel *strip = neopixel[ pattern[i] ];
+    uint32_t color = pattern[i + 1];
+
+    theaterChase(*strip, color, 50);
+    off(*strip);
   }
-      case 9:
-      // to check wiring
-      Serial. println("Type something to stop");
-      while (Serial.available() > 0) {
-        Serial.read();   // eol
+
+  // See if user can match
+  Serial.print("match "); Serial.println(i);
+  unsigned long start = millis(); // for timeout
+
+  for (int i = 0; pattern[i] != 0;  i += 2 ) {
+    // Next peice of pattern that we expect
+    // pattern = { #,color, ... } where # is strip[i] and cap[i]
+    int want_touch = (int) pattern[i];
+    Serial.print("want "); Serial.println( want_touch );
+
+    boolean matched = false;
+    while ( !matched && millis() - start <= match_timeout ) {
+      int touch_i = next_touch();
+      if (touch_i > 0) {
+        if (touch_i == want_touch) {
+          matched = true;
+          Serial.println("  hit");
+        }
+        else {
+          Serial.println("  miss");
+          break; // leave while, matched is false
+        }
       }
-      while (Serial.available() <= 0) {
-        theaterChase(strip1, RED, 20);
-        theaterChase(strip1, GREEN, 20);
-        theaterChase(strip1, strip1.Color(0, 0, 127, 0), 20);
-      }
-      break;
+    }
+    Serial.print("  end while"); Serial.print(matched);
+
+    if (matched) {
+      // go on to next one
+      Serial.print("  want next");
+    }
+    else {
+      Serial.println("total fail");
+      return false; // ran out of time or got it wrong
+    }
   }
+
 }
-
 //Fill the dots one after the other with a color
 void off(Adafruit_NeoPixel & strip) {
   uint32_t c = strip1.Color(0, 0, 0, 0);
@@ -178,4 +258,23 @@ void theaterChase(Adafruit_NeoPixel & strip, uint32_t color, uint8_t wait) {
     }
   }
 }
+/*
+//Theatre-style crawling lights with rainbow effect
+void theaterChaseRainbow(Adafruit_NeoPixel & strip, uint32_t color, uint8_t wait) {
+  for (int j=0; j < 256; j++) {     // cycle all 256 colors in the wheel
+    for (int q=0; q < 3; q++) {
+      for (int i=0; i < strip.numPixels(); i=i+3) {
+        strip.setPixelColor(i+q, Wheel( (i+j) % 255));    //turn every third pixel on
+      }
+      strip.show();
+
+      delay(wait);
+
+      for (int i=0; i < strip.numPixels(); i=i+3) {
+        strip.setPixelColor(i+q, 0);        //turn every third pixel off
+      }
+    }
+  }
+}
+*/
 
