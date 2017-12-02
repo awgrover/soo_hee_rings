@@ -1,17 +1,23 @@
-// This is a demonstration on how to use an input device to trigger changes on your neo pixels.
-// You should wire a momentary push button to connect from ground to a digital IO pin.  When you
-// press the button it will change to a new pixel animation.  Note that you need to press the
-// button once to start the first animation!
+//test capacitive sensor with neopixel
 
 #include <Adafruit_NeoPixel.h>
+#include <Wire.h>
+#include "Adafruit_MPR121.h"
 
-#define BUTTON_PIN   2    // Digital IO pin connected to the button.  This will be
-                          // driven with a pull-up resistor so the switch should
-                          // pull the pin to ground momentarily.  On a high -> low
-                          // transition the button press logic will execute.
+// You can have up to 4 on one i2c bus but one is enough for testing!
+Adafruit_MPR121 cap = Adafruit_MPR121();
+
+// Keeps track of the last pins touched
+// so we know when buttons are 'released'
+uint16_t lasttouched = 0;
+uint16_t currtouched = 0;
 
 #define PIXEL_PIN1   6    // Digital IO pin connected to the NeoPixels.
 #define PIXEL_PIN2   7
+//#define PIXEL_PIN3   8
+//#define PIXEL_PIN4   9
+//#define PIXEL_PIN5   10
+//#define PIXEL_PIN6   11
 
 #define PIXEL_COUNT 24
 
@@ -20,141 +26,231 @@
 // Parameter 3 = pixel type flags, add together as needed:
 //   NEO_KHZ400  400 KHz bitstream (e.g. FLORA pixels)
 //   NEO_KHZ800  800 KHz bitstream (e.g. High Density LED strip), correct for neopixel stick
-Adafruit_NeoPixel strip1 = Adafruit_NeoPixel(PIXEL_COUNT, PIXEL_PIN1, NEO_RGBW + NEO_KHZ800);
-Adafruit_NeoPixel strip2 = Adafruit_NeoPixel(PIXEL_COUNT, PIXEL_PIN2, NEO_RGBW + NEO_KHZ800);
+Adafruit_NeoPixel strip1 = Adafruit_NeoPixel(PIXEL_COUNT, PIXEL_PIN1, NEO_GRBW + NEO_KHZ800);
+Adafruit_NeoPixel strip2 = Adafruit_NeoPixel(PIXEL_COUNT, PIXEL_PIN2, NEO_GRBW + NEO_KHZ800);
+//Adafruit_NeoPixel strip3 = Adafruit_NeoPixel(PIXEL_COUNT, PIXEL_PIN3, NEO_GRBW + NEO_KHZ800);
+//Adafruit_NeoPixel strip4 = Adafruit_NeoPixel(PIXEL_COUNT, PIXEL_PIN4, NEO_GRBW + NEO_KHZ800);
+//Adafruit_NeoPixel strip5 = Adafruit_NeoPixel(PIXEL_COUNT, PIXEL_PIN5, NEO_GRBW + NEO_KHZ800);
+//Adafruit_NeoPixel strip6 = Adafruit_NeoPixel(PIXEL_COUNT, PIXEL_PIN6, NEO_GRBW + NEO_KHZ800);
 
-uint32_t black = strip1.Color(0, 0, 0, 0);
+// R,G,B,W
+const uint32_t RED = strip1.Color(255, 0, 0, 0);//strip1
+const uint32_t BLUE = strip1.Color(0, 72, 130, 0);//strip2.strip6(last)
+const uint32_t GREEN = strip1.Color(0, 127, 0, 0);//strip3
+const uint32_t PURPLE = strip1.Color(158, 8, 148, 0);//strip4
+const uint32_t YELLOW = strip1.Color(255, 100, 0, 0);//strip5
+const uint32_t ORANGE = strip1.Color(150, 7, 0, 0);//strip6
 
-bool oldState = HIGH;
-int showType = 0;
+const int Days = 7;
 
-//#define DEBUG // uncomment to output to serial console for debugging
+boolean oldState = LOW;
+unsigned int showType = 0;
+
 
 void setup() {
-  #ifdef DEBUG
-    Serial.begin(115200);
-  #endif
-  pinMode(BUTTON_PIN, INPUT_PULLUP);
+  Serial.begin( 9600);
+  while (!Serial);        // needed to keep leonardo/micro from starting too fast!
+
+  Serial.println("Start");
+
+  //pinMode(BUTTON_PIN, INPUT_PULLUP);
   strip1.begin();
   strip1.show();
-  strip2.begin();
-  strip2.show();// Initialize all pixels to 'off'
+  // strip2.begin();
+  // strip2.show();
+  // strip3.begin();
+  // strip3.show();
+  // strip4.begin();
+  // strip4.show();
+  // strip5.begin();
+  // strip5.show();
+  // strip6.begin();
+  // strip6.show();// Initialize all pixels to 'off'
+  Serial.println("Neopixels setup");
+
+  // Default address is 0x5A, if tied to 3.3V its 0x5B
+  // If tied to SDA its 0x5C and if SCL then 0x5D
+  if (!cap.begin(0x5A)) {
+    Serial.println("MPR121 not found, check wiring?");
+    while (1);
+  }
+  Serial.println("MPR121 found!");
+
+  showType = 0;
+
+  Serial.println("Begin");
 }
 
 void loop() {
-  // Get current button state.
-  bool newState = digitalRead(BUTTON_PIN);
-
-  // Check if state changed from high to low (button press).
-  #ifdef DEBUG
-    newState=LOW; oldState=HIGH; // I pushed the button!
-  #endif
-  if (newState == LOW && oldState == HIGH) {
-    // Short delay to debounce button.
-    delay(20);
-    // Check if button is still low after debounce.
-    newState = digitalRead(BUTTON_PIN);
-    #ifdef DEBUG
-      newState = LOW;
-    #endif
-    if (newState == LOW) {
-      showType++;
-      if (showType > 9)
-        showType=0;
-      startShow(showType);
+  // debug
+  if (Serial.available() > 0) {
+    int val = Serial.read() ;
+    if (val >= '0' && val <= '9') {
+      showType = val - '0';
+      Serial.print("MAN "); Serial.println(showType);
+      startShow(showType  );
     }
   }
 
-  // Set the last button state to the old state.
-  oldState = newState;
+  // Get the currently touched pads
+  currtouched = cap.touched(); // bitmap
+
+  for (uint8_t i = 0; i < 12; i++) {
+    // it if *is* touched and *wasnt* touched before, alert!
+    if ((currtouched & _BV(i)) && !(lasttouched & _BV(i)) ) {
+      Serial.print(i); Serial.println(" touched");
+      startShow( showType + 1  );
+      showType = (showType + 1) % Days; // 0..6
+    }
+    // if it *was* touched and now *isnt*, alert!
+    if (!(currtouched & _BV(i)) && (lasttouched & _BV(i)) ) {
+      Serial.print(i); Serial.println(" released");
+    }
+  }
+  // reset our state, i.e. dont' trigger again till untouch
+  lasttouched = currtouched;
+
+  // comment out this line for detailed data from the sensor!
+  return;
+
+  // debugging info, raw values
+  Serial.print("\t\t\t\t\t\t\t\t\t\t\t\t\t 0x"); Serial.println(cap.touched(), HEX);
+  Serial.print("Filt: ");
+  for (uint8_t i = 0; i < 12; i++) {
+    Serial.print(cap.filteredData(i)); Serial.print("\t");
+  }
+  Serial.println();
+  Serial.print("Base: ");
+  for (uint8_t i = 0; i < 12; i++) {
+    Serial.print(cap.baselineData(i)); Serial.print("\t");
+  }
+  Serial.println();
+
+  // put a delay so it isn't overwhelming
+  delay(100);
 }
+
 
 void startShow(int i) {
-  // while this is running, the button is ignored
-  switch(i){
-    case 0: 
-      theaterChase(strip1.Color(0, 0, 0, 0), 50);    // Black/off
-      break;
-           
-    case 1: 
-      theaterChase(strip1.Color(0, 255, 0, 0), 50);  // Red (strip1)
+  Serial.print("Show "); Serial.println(i);
+
+  switch (i) {
+
+    case 1:
+      theaterChase(strip1, RED, 50);
+      off(strip1);
       break;
 
-    case 2: 
-      theaterChase(strip1.Color(0x4B, 0x0, 0x82, 0), 70);  // Blue 
+    case 2:
+      theaterChase(strip1, RED, 50);
+      off(strip1);    // Black/off
+      theaterChase(strip4, PURPLE, 50);
+      off(strip4);    // Black/off
+      theaterChase(strip2, BLUE, 50);
+      off(strip2);
+      theaterChase(strip5, YELLOW, 50);
+      off(strip5);
       break;
 
-    case 3: 
-      theaterChase(strip1.Color(100,255,0,0), 70); // Yellow
-      break;
-    
-    case 4: 
-      theaterChase(strip1.Color(0, 0, 0, 0), 50);    // Black/off
-      break;
-            
-    case 5: 
-      theaterChase(strip2.Color(8, 158, 148, 0), 50);    // purple
-      break;
-            
-    case 6: 
-      theaterChase(strip2.Color(127, 127, 127, 0), 50); // White
+    case 3:
+      theaterChase(strip3, GREEN, 50);
+      off(strip3);    // Black/off
+      theaterChase(strip2, BLUE, 50);  // Blue
+      off(strip2);    // Black/off
+      theaterChase(strip4, PURPLE, 50);    // purple
+      off(strip4);    // Black/off
       break;
 
-    case 7: 
-      theaterChase(strip2.Color(0, 0, 0, 0), 50);    // Black/off
+    case 4:
+      theaterChase(strip2, BLUE, 50);
+      off(strip2);
+      theaterChase(strip1, RED, 50);
+      off(strip1);
+      theaterChase(strip5, YELLOW, 50);
+      off(strip5);
+      theaterChase(strip3, GREEN, 50);
+      off(strip3);
       break;
-  
+
+
+    case 5:
+      theaterChase(strip4, PURPLE, 50);
+      off(strip4);
+      theaterChase(strip3, GREEN, 50);
+      off(strip3);
+      theaterChase(strip2, BLUE, 50);
+      off(strip2);
+      theaterChase(strip1, RED, 50);
+      off(strip1);
+      break;
+
+
+    case 6:
+      theaterChase(strip5, YELLOW, 50);
+      off(strip5);
+      theaterChase(strip1, RED, 50);
+      off(strip1);
+      theaterChase(strip4, PURPLE, 50);
+      off(strip4);
+      theaterChase(strip3, GREEN, 50);
+      off(strip3);
+      break;
+
+
+    case 7:
+      theaterChase(strip1, RED, 50);
+      off(strip1);
+      theaterChase(strip3, GREEN, 50);
+      off(strip3);
+      theaterChase(strip2, BLUE, 50);
+      off(strip2);
+      break;
+
+    case 8:
+      theaterChase(strip6, ORANGE, 50);
+      off(strip6);
+      break;
+
+    case 9:
+      // to check wiring
+      Serial. println("Type something to stop");
+      while (Serial.available() > 0) {
+        Serial.read();   // eol
+      }
+      while (Serial.available() <= 0) {
+        theaterChase(strip1, RED, 20);
+        theaterChase(strip1, GREEN, 20);
+        theaterChase(strip1, strip1.Color(0, 0, 127, 0), 20);
+      }
+      break;
+
   }
 }
-
-// Fill the dots one after the other with a color
-//void colorWipe(uint32_t c, uint8_t wait) {
-  //for(uint16_t i=0; i<strip.numPixels(); i++) {
-    //strip.setPixelColor(i, c);
-    //strip.show();
-    //delay(wait);
-  //}
-//}
+//Fill the dots one after the other with a color
+void off(Adafruit_NeoPixel & strip) {
+  uint32_t c = strip1.Color(0, 0, 0, 0);
+  for (uint16_t i = 0; i < strip.numPixels(); i++) {
+    strip.setPixelColor(i, c);
+  }
+  strip.show();
+}
 
 //Theatre-style crawling lights.
-void theaterChase(uint32_t c, uint8_t wait) {
-  // a frame is 1 move: a "shift"
-  #ifdef DEBUG
-    Serial.println(c);
-  #endif
-  for (int frame=0; frame<7; frame++) {
-    // the animation is in sets of 3:
-    // (1,0,0)...
-    // (0,1,0)...
-    // (0,0,1)...
-    // repeat
-    // So, "on" is +0, +1, +2
-    // And off is +1/+2, +2/+0, +0,+1
-    // Which is modulus arithmetic on 3
-    // I.e. wrap around
-    int on = frame % 3;    // +0,+1,+2
-    int off1 = (frame + 1) % 3; // +1,+2,+0
-    int off2 = (frame + 2) % 3; // +2,+0,+1
+void theaterChase(Adafruit_NeoPixel & strip, uint32_t color, uint8_t wait) {
+  for (int j = 0; j < 7; j++) { //do 7 cycles of chasing
+    for (int q = 0; q < 3; q++) {
+      for (int i = 0; i < strip1.numPixels(); i = i + 3) {
+        strip.setPixelColor(i + q, color);
+      }
+      strip.show();
 
-    // across all the pixels, one set of 3 at a time
-    for (int p=0; p < strip1.numPixels(); p += 3) {
-      // one set of 3
-      strip1.setPixelColor(on, c);
-      strip1.setPixelColor(off1, black);
-      strip1.setPixelColor(off2, black);
-      strip2.setPixelColor(on, c);
-      strip2.setPixelColor(off1, black);
-      strip2.setPixelColor(off2, black);
-      #ifdef DEBUG
-        Serial.print(on);Serial.print(off1);Serial.print(off2);
-      #endif
+      delay(wait);
+
+      for (int i = 0; i < strip1.numPixels(); i = i + 3)
+        for (int i = 0; i < strip2.numPixels(); i = i + 3) {
+          strip.setPixelColor(i + q, 0);
+        }
     }
-    strip1.show();
-    strip2.show();
-    #ifdef DEBUG
-      Serial.println();
-    #endif
-    delay(wait); // between frames
   }
 }
 
