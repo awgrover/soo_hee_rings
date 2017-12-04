@@ -47,13 +47,13 @@ const int Days = 7;
 
 // Patterns: strip&touch,Color,
 // FIXME should be const
-uint32_t day1[] = { 1, RED, 2, BLUE, 3, GREEN, 0, 0 };
-uint32_t day2[] = { 4, PURPLE, 1, RED, 2, BLUE, 5, YELLOW, 0, 0 }; // FIXME
-uint32_t day3[] = { 3, GREEN, 2, BLUE, 4, PURPLE, 0, 0 };
-uint32_t day4[] = { 2, BLUE, 1, RED, 5, YELLOW, 3, GREEN, 0, 0 };
-uint32_t day5[] = { 4, PURPLE, 3, GREEN, 2, BLUE, 1, RED, 0, 0 };
-uint32_t day6[] = { 5, YELLOW, 1, RED, 4, PURPLE, 3, GREEN, 0, 0 };
-uint32_t day7[] = { 1, RED, 3, GREEN, 2, BLUE, 0, 0 };
+uint32_t day1[] = { 0, RED, 1, BLUE, 2, GREEN, 0, 0 };
+uint32_t day2[] = { 3, PURPLE, 0, RED, 1, BLUE, 4, YELLOW, 0, 0 }; // FIXME
+uint32_t day3[] = { 2, GREEN, 1, BLUE, 3, PURPLE, 0, 0 };
+uint32_t day4[] = { 1, BLUE, 0, RED, 4, YELLOW, 2, GREEN, 0, 0 };
+uint32_t day5[] = { 3, PURPLE, 2, GREEN, 1, BLUE, 0, RED, 0, 0 };
+uint32_t day6[] = { 4, YELLOW, 0, RED, 3, PURPLE, 2, GREEN, 0, 0 };
+uint32_t day7[] = { 0, RED, 2, GREEN, 1, BLUE, 0, 0 };
 uint32_t *day_pattern[] = { day1, day2, day3, day4, day5, day6, day7 };
 const int match_timeout = 5000; // msec timeout to get a match right
 
@@ -107,15 +107,15 @@ void loop() {
     which_day = (which_day + 1) % Days;
     if (which_day == 0) {
       // play congratulations
-    all_one_color(theaterChaseRainbow);
-    delay(300);
-    all_one_color(BLACK);
+      all_one_color(PURPLE);
+      delay(300);
+      all_one_color(BLACK);
     }
     else {
       // play good job so far
-    all_one_color(ORANGE);
-    delay(300);
-    all_one_color(BLACK);
+      all_one_color(GREEN);
+      delay(300);
+      all_one_color(BLACK);
     }
   }
   else {
@@ -186,7 +186,7 @@ boolean play_usermatch(int i) {
   // a pattern is pairs: { #,color, ... }, so go by 2's
   Serial.print("play "); Serial.println(i);
   uint32_t *pattern = day_pattern[ i ];
-  for (int i = 0; pattern[i] != 0;  i += 2 ) {
+  for (int i = 0; pattern[i + 1] != 0;  i += 2 ) {
     Adafruit_NeoPixel *strip = neopixel[ pattern[i] ];
     uint32_t color = pattern[i + 1];
 
@@ -198,7 +198,7 @@ boolean play_usermatch(int i) {
   Serial.print("match "); Serial.println(i);
   unsigned long start = millis(); // for timeout
 
-  for (int i = 0; pattern[i] != 0;  i += 2 ) {
+  for (int i = 0; pattern[i + 1] != 0;  i += 2 ) {
     // Next peice of pattern that we expect
     // pattern = { #,color, ... } where # is strip[i] and cap[i]
     int want_touch = (int) pattern[i];
@@ -207,7 +207,7 @@ boolean play_usermatch(int i) {
     boolean matched = false;
     while ( !matched && millis() - start <= match_timeout ) {
       int touch_i = next_touch();
-      if (touch_i > 0) {
+      if (touch_i >= 0) {
         if (touch_i == want_touch) {
           matched = true;
           Serial.println("  hit");
@@ -223,14 +223,16 @@ boolean play_usermatch(int i) {
     if (matched) {
       // go on to next one
       Serial.print("  want next");
+
     }
     else {
       Serial.println("total fail");
       return false; // ran out of time or got it wrong
     }
   }
-
+  return true;
 }
+
 //Fill the dots one after the other with a color
 void off(Adafruit_NeoPixel & strip) {
   uint32_t c = strip1.Color(0, 0, 0, 0);
@@ -258,38 +260,3 @@ void theaterChase(Adafruit_NeoPixel & strip, uint32_t color, uint8_t wait) {
     }
   }
 }
-
-//Theatre-style crawling lights with rainbow effect
-void theaterChaseRainbow(Adafruit_NeoPixel & strip, uint32_t color, uint8_t wait) {
-  for (int j=0; j < 256; j++) {     // cycle all 256 colors in the wheel
-    for (int q=0; q < 3; q++) {
-      for (int i=0; i < strip.numPixels(); i=i+3) {
-        strip.setPixelColor(i+q, Wheel(strip, (i+j) % 255));    //turn every third pixel on
-      }
-      strip.show();
-
-      delay(wait);
-
-      for (int i=0; i < strip.numPixels(); i=i+3) {
-        strip.setPixelColor(i+q, 0);        //turn every third pixel off
-      }
-    }
-  }
-}
-
-// Input a value 0 to 255 to get a color value.
-// The colours are a transition r - g - b - back to r.
-uint32_t Wheel(Adafruit_NeoPixel & strip, byte WheelPos) {
-  WheelPos = 255 - WheelPos;
-  if(WheelPos < 85) {
-    return strip.Color(255 - WheelPos * 3, 0, WheelPos * 3);
-  }
-  if(WheelPos < 170) {
-    WheelPos -= 85;
-    return strip.Color(0, WheelPos * 3, 255 - WheelPos * 3);
-  }
-  WheelPos -= 170;
-  return strip.Color(WheelPos * 3, 255 - WheelPos * 3, 0);
-}
-
-
